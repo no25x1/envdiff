@@ -1,93 +1,71 @@
 package diff
 
 import (
+	"sort"
+
 	"github.com/user/envdiff/internal/parser"
 )
 
-// ChangeType describes the kind of difference between two env files.
-type ChangeType string
+// Status represents the kind of change for a key.
+type Status string
 
 const (
-	Added    ChangeType = "added"
-	Removed  ChangeType = "removed"
-	Modified ChangeType = "modified"
-	Unchanged ChangeType = "unchanged"
+	Added     Status = "added"
+	Removed   Status = "removed"
+	Modified  Status = "modified"
+	Unchanged Status = "unchanged"
 )
 
-// Change represents a single diffed entry between two env files.
-type Change struct {
-	Key        string
-	Type       ChangeType
-	OldValue   string
-	NewValue   string
-}
-
-// Result holds the complete diff between two env files.
+// Result holds the diff outcome for a single key.
 type Result struct {
-	BaseFile   string
-	TargetFile string
-	Changes    []Change
+	Key      string
+	Status   Status
+	OldValue string
+	NewValue string
 }
 
-// Diff computes the difference between base and target env files.
-func Diff(base, target *parser.EnvFile) *Result {
-	result := &Result{
-		BaseFile:   base.Path,
-		TargetFile: target.Path,
-	}
+// Diff compares two EnvFiles and returns an ordered slice of Results.
+// base is the reference environment; target is the environment being compared.
+func Diff(base, target *parser.EnvFile) []Result {
+	results := make([]Result, 0)
+	seen := make(map[string]bool)
 
-	// Check for removed or modified keys.
-	for _, entry := range base.Entries {
-		if t, ok := target.Index[entry.Key]; ok {
-			if t.Value != entry.Value {
-				result.Changes = append(result.Changes, Change{
-					Key:      entry.Key,
-					Type:     Modified,
-					OldValue: entry.Value,
-					NewValue: t.Value,
-				})
-			} else {
-				result.Changes = append(result.Changes, Change{
-					Key:  entry.Key,
-					Type: Unchanged,
-				})
-			}
-		} else {
-			result.Changes = append(result.Changes, Change{
-				Key:      entry.Key,
-				Type:     Removed,
-				OldValue: entry.Value,
-			})
+	// Collect all keys from both files in sorted order.
+	keySet := make(map[string]struct{})
+	for _, e := range base.Entries {
+		keySet[e.Key] = struct{}{}
+	}
+	for _, e := range target.Entries {
+		keySet[e.Key] = struct{}{}
+	}
+	keys := make([]string, 0, len(keySet))
+	for k := range keySet {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	baseMap := base.Map()
+	targetMap := target.Map()
+
+	for _, key := range keys {
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		oldVal, inBase := baseMap[key]
+		newVal, inTarget := targetMap[key]
+
+		switch {
+		case inBase && inTarget && oldVal == newVal:
+			results = append(results, Result{Key: key, Status: Unchanged, OldValue: oldVal, NewValue: newVal})
+		case inBase && inTarget && oldVal != newVal:
+			results = append(results, Result{Key: key, Status: Modified, OldValue: oldVal, NewValue: newVal})
+		case !inBase && inTarget:
+			results = append(results, Result{Key: key, Status: Added, OldValue: "", NewValue: newVal})
+		case inBase && !inTarget:
+			results = append(results, Result{Key: key, Status: Removed, OldValue: oldVal, NewValue: ""})
 		}
 	}
-
-	// Check for added keys.
-	for _, entry := range target.Entries {
-		if _, ok := base.Index[entry.Key]; !ok {
-			result.Changes = append(result.Changes, Change{
-				Key:      entry.Key,
-				Type:     Added,
-				NewValue: entry.Value,
-			})
-		}
-	}
-
-	return result
-}
-
-// Summary returns counts of each change type.
-func (r *Result) Summary() (added, removed, modified, unchanged int) {
-	for _, c := range r.Changes {
-		switch c.Type {
-		case Added:
-			added++
-		case Removed:
-			removed++
-		case Modified:
-			modified++
-		case Unchanged:
-			unchanged++
-		}
-	}
-	return
+	return results
 }
