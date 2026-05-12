@@ -67,3 +67,17 @@ func TestDiff_Summary(t *testing.T) {
 		t.Errorf("unexpected summary: added=%d removed=%d modified=%d", added, removed, modified)
 	}
 }
+
+func TestDiff_Empty(t *testing.T) {
+	base := makeEnvFile(".env.base", map[string]string{})
+	target := makeEnvFile(".env.target", map[string]string{})
+	result := Diff(base, target)
+	if len(result.Changes) != 0 {
+		t.Errorf("expected no changes for two empty files, got %+v", result.Changes)
+	}
+	added, removed, modified, unchanged := result.Summary()
+	if added != 0 || removed != 0 || modified != 0 || unchanged != 0 {
+		t.Errorf("expected zero summary for empty diff, got added=%d removed=%d modified=%d unchanged=%d",
+			added, removed, modified, unchanged)
+	}
+}
