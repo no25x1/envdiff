@@ -1,119 +1,122 @@
 package cli
 
 import (
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 
-	"github.com/user/envdiff/internal/config"
-	"github.com/user/envdiff/internal/diff"
-	"github.com/user/envdiff/internal/masker"
-	"github.com/user/envdiff/internal/parser"
-	"github.com/user/envdiff/internal/reconcile"
-	"github.com/user/envdiff/internal/reporter"
+	"github.com/envdiff/internal/config"
+	"github.com/envdiff/internal/diff"
+	"github.com/envdiff/internal/masker"
+	"github.com/envdiff/internal/parser"
+	"github.com/envdiff/internal/reconcile"
+	"github.com/envdiff/internal/reporter"
+	"github.com/envdiff/internal/validator"
 )
 
-// Run parses CLI arguments and dispatches to the appropriate subcommand.
-func Run(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: envdiff <diff|reconcile> [options]")
+// Run is the entry point for the CLI.
+func Run(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, UsageText)
+		return 1
 	}
 
-	switch args[0] {
+	cmd := args[0]
+	remaining := args[1:]
+
+	switch cmd {
 	case "diff":
-		return runDiff(args[1:])
+		return runDiff(remaining)
 	case "reconcile":
-		return runReconcile(args[1:])
+		return runReconcile(remaining)
+	case "validate":
+		return runValidate(remaining)
+	case "version":
+		fmt.Println(VersionString)
+		return 0
 	default:
-		return fmt.Errorf("unknown command %q; expected diff or reconcile", args[0])
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
+		return 1
 	}
 }
 
-func runDiff(args []string) error {
-	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
-	format := fs.String("format", "text", "output format: text or json")
-	cfgFile := fs.String("config", "", "path to config file")
-	if err := fs.Parse(args); err != nil {
-		return err
+func runDiff(args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "diff requires <base> <compare> arguments")
+		return 1
 	}
-	if fs.NArg() < 2 {
-		return errors.New("diff requires two .env file arguments")
-	}
-
-	cfg, err := loadConfig(*cfgFile)
+	cfg := loadConfig()
+	base, err := parser.Parse(args[0])
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error reading base file: %v\n", err)
+		return 1
 	}
-
-	base, err := parser.Parse(fs.Arg(0))
+	compare, err := parser.Parse(args[1])
 	if err != nil {
-		return fmt.Errorf("parsing base file: %w", err)
+		fmt.Fprintf(os.Stderr, "error reading compare file: %v\n", err)
+		return 1
 	}
-	target, err := parser.Parse(fs.Arg(1))
-	if err != nil {
-		return fmt.Errorf("parsing target file: %w", err)
+	m := masker.New(cfg.SensitivePatterns...)
+	results := diff.Diff(base, compare)
+	format := "text"
+	if len(args) > 2 {
+		format = args[2]
 	}
-
-	m := masker.New(cfg.SensitivePatterns, cfg.MaskValue)
-	results := diff.Diff(base, target)
-
-	rep := reporter.New(os.Stdout, m)
-	switch *format {
-	case "json":
-		return rep.WriteJSON(results)
-	default:
-		rep.WriteText(results)
-		rep.Summary(results)
-		return nil
+	r := reporter.New(os.Stdout, format, m)
+	if err := r.Write(results); err != nil {
+		fmt.Fprintf(os.Stderr, "error writing report: %v\n", err)
+		return 1
 	}
+	return 0
 }
 
-func runReconcile(args []string) error {
-	fs := flag.NewFlagSet("reconcile", flag.ContinueOnError)
-	cfgFile := fs.String("config", "", "path to config file")
-	outFile := fs.String("out", "", "write reconciled output to file (default: stdout)")
-	if err := fs.Parse(args); err != nil {
-		return err
+func runReconcile(args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "reconcile requires <base> <target> arguments")
+		return 1
 	}
-	if fs.NArg() < 2 {
-		return errors.New("reconcile requires two .env file arguments")
-	}
-
-	_, err := loadConfig(*cfgFile)
+	base, err := parser.Parse(args[0])
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error reading base file: %v\n", err)
+		return 1
 	}
-
-	base, err := parser.Parse(fs.Arg(0))
+	target, err := parser.Parse(args[1])
 	if err != nil {
-		return fmt.Errorf("parsing base file: %w", err)
+		fmt.Fprintf(os.Stderr, "error reading target file: %v\n", err)
+		return 1
 	}
-	target, err := parser.Parse(fs.Arg(1))
-	if err != nil {
-		return fmt.Errorf("parsing target file: %w", err)
-	}
-
 	plan := reconcile.Plan(base, target)
-	result := reconcile.Apply(base.Entries, target.Entries, plan)
-	output := reconcile.Render(result)
-
-	w := os.Stdout
-	if *outFile != "" {
-		f, err := os.Create(*outFile)
-		if err != nil {
-			return fmt.Errorf("creating output file: %w", err)
-		}
-		defer f.Close()
-		w = f
-	}
-	_, err = fmt.Fprint(w, output)
-	return err
+	result := reconcile.Apply(target.ToMap(), plan)
+	fmt.Print(reconcile.Render(result))
+	return 0
 }
 
-func loadConfig(path string) (*config.Config, error) {
-	if path == "" {
-		return config.Default(), nil
+func runValidate(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "validate requires <file> argument")
+		return 1
 	}
-	return config.LoadFile(path)
+	f, err := parser.Parse(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading file: %v\n", err)
+		return 1
+	}
+	v := validator.New()
+	results := v.Validate(f)
+	if len(results) == 0 {
+		fmt.Println("validation passed: no issues found")
+		return 0
+	}
+	for _, r := range results {
+		fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", r.Rule, r.Key, r.Message)
+	}
+	fmt.Fprintf(os.Stderr, "%d issue(s) found\n", len(results))
+	return 2
+}
+
+func loadConfig() *config.Config {
+	cfg, err := config.LoadFile(".envdiff.yaml")
+	if err != nil {
+		return config.Default()
+	}
+	return cfg
 }

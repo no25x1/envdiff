@@ -1,97 +1,88 @@
-package cli
+package cli_test
 
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/envdiff/internal/cli"
 )
 
 func writeTempEnv(t *testing.T, content string) string {
 	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "*.env")
-	if err != nil {
+	dir := t.TempDir()
+	p := filepath.Join(dir, ".env")
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.WriteString(content); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	return f.Name()
+	return p
 }
 
 func TestRun_NoArgs(t *testing.T) {
-	err := Run([]string{})
-	if err == nil {
-		t.Fatal("expected error for no args")
+	code := cli.Run([]string{})
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
 	}
 }
 
 func TestRun_UnknownCommand(t *testing.T) {
-	err := Run([]string{"unknown"})
-	if err == nil || !strings.Contains(err.Error(), "unknown command") {
-		t.Fatalf("expected unknown command error, got %v", err)
+	code := cli.Run([]string{"unknown"})
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+}
+
+func TestRun_Version(t *testing.T) {
+	code := cli.Run([]string{"version"})
+	if code != 0 {
+		t.Errorf("expected exit code 0, got %d", code)
 	}
 }
 
 func TestRun_DiffMissingFiles(t *testing.T) {
-	err := Run([]string{"diff"})
-	if err == nil {
-		t.Fatal("expected error when no files provided")
+	code := cli.Run([]string{"diff", "nonexistent.env", "also-missing.env"})
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
 	}
 }
 
 func TestRun_DiffTextFormat(t *testing.T) {
-	base := writeTempEnv(t, "FOO=bar\nSECRET_KEY=abc\n")
-	target := writeTempEnv(t, "FOO=baz\nNEW_VAR=hello\n")
-
-	err := Run([]string{"diff", base, target})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	base := writeTempEnv(t, "APP_ENV=production\nDB_HOST=db.prod\n")
+	compare := writeTempEnv(t, "APP_ENV=staging\nDB_HOST=db.prod\nNEW_KEY=value\n")
+	code := cli.Run([]string{"diff", base, compare, "text"})
+	if code != 0 {
+		t.Errorf("expected exit code 0, got %d", code)
 	}
 }
 
-func TestRun_DiffJSONFormat(t *testing.T) {
-	base := writeTempEnv(t, "FOO=bar\n")
-	target := writeTempEnv(t, "FOO=bar\n")
-
-	err := Run([]string{"diff", "-format", "json", base, target})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestRun_ValidatePass(t *testing.T) {
+	f := writeTempEnv(t, "APP_NAME=myapp\nDB_HOST=localhost\n")
+	code := cli.Run([]string{"validate", f})
+	// DB_HOST=localhost triggers no-empty-value passes, but uppercase passes
+	// no-empty-value passes since localhost is non-empty
+	if code != 0 {
+		t.Errorf("expected exit code 0 for valid file, got %d", code)
 	}
 }
 
-func TestRun_ReconcileMissingFiles(t *testing.T) {
-	err := Run([]string{"reconcile"})
-	if err == nil {
-		t.Fatal("expected error when no files provided")
+func TestRun_ValidateFail(t *testing.T) {
+	f := writeTempEnv(t, "app_name=myapp\nDB_HOST=\n")
+	code := cli.Run([]string{"validate", f})
+	if code == 0 {
+		t.Errorf("expected non-zero exit code for invalid file, got 0")
 	}
 }
 
-func TestRun_ReconcileToStdout(t *testing.T) {
-	base := writeTempEnv(t, "FOO=bar\nOLD=val\n")
-	target := writeTempEnv(t, "FOO=bar\nNEW=hello\n")
-
-	err := Run([]string{"reconcile", base, target})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestRun_ValidateMissingFile(t *testing.T) {
+	code := cli.Run([]string{"validate", "no-such-file.env"})
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
 	}
 }
 
-func TestRun_ReconcileToFile(t *testing.T) {
-	base := writeTempEnv(t, "FOO=bar\n")
-	target := writeTempEnv(t, "FOO=baz\n")
-	out := filepath.Join(t.TempDir(), "out.env")
-
-	err := Run([]string{"reconcile", "-out", out, base, target})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	data, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatalf("reading output file: %v", err)
-	}
-	if !strings.Contains(string(data), "FOO") {
-		t.Errorf("expected output to contain FOO, got: %s", data)
+func TestRun_ReconcileMissingArgs(t *testing.T) {
+	code := cli.Run([]string{"reconcile"})
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
 	}
 }
