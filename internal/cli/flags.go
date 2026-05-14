@@ -42,3 +42,8 @@ var defaultVersion = versionInfo{Version: "dev", Commit: "none"}
 func VersionString(v versionInfo) string {
 	return fmt.Sprintf("envdiff %s (commit: %s)", v.Version, v.Commit)
 }
+
+// DefaultVersionString returns the version string using the default build-time version.
+func DefaultVersionString() string {
+	return VersionString(defaultVersion)
+}
