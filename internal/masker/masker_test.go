@@ -50,6 +50,28 @@ func TestIsSensitive_CustomPatterns(t *testing.T) {
 	}
 }
 
+func TestIsSensitive_CaseInsensitive(t *testing.T) {
+	m := masker.New()
+
+	// Keys should be matched regardless of case
+	cases := []struct {
+		key       string
+		wantMatch bool
+	}{
+		{"db_password", true},
+		{"Api_Key", true},
+		{"aws_secret_access_key", true},
+		{"app_env", false},
+		{"port", false},
+	}
+	for _, tc := range cases {
+		got := m.IsSensitive(tc.key)
+		if got != tc.wantMatch {
+			t.Errorf("IsSensitive(%q) = %v, want %v", tc.key, got, tc.wantMatch)
+		}
+	}
+}
+
 func TestMaskEnv(t *testing.T) {
 	m := masker.New()
 
