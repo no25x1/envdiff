@@ -57,3 +57,12 @@ func TestRun_LintFileWithWarningsOnly(t *testing.T) {
 		t.Fatalf("expected no error for warnings-only file, got: %v", err)
 	}
 }
+
+func TestRun_LintEmptyFile(t *testing.T) {
+	// An empty .env file should be considered valid with no errors.
+	p := writeTempEnvLint(t, "")
+	err := cli.Run([]string{"lint", p})
+	if err != nil {
+		t.Fatalf("expected no error for empty file, got: %v", err)
+	}
+}
