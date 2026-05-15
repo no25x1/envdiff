@@ -19,6 +19,14 @@ func TestRun_WatchMissingBaseFile(t *testing.T) {
 	}
 }
 
+func TestRun_WatchMissingOneArg(t *testing.T) {
+	a := writeTempEnvWatch(t, "KEY=a\n")
+	result := runCLI(t, []string{"watch", a})
+	if result.exitCode == 0 {
+		t.Fatal("expected non-zero exit for watch with only one arg")
+	}
+}
+
 func TestRun_WatchValidFilesStartsWatcher(t *testing.T) {
 	a := writeTempEnvWatch(t, "KEY=a\n")
 	b := writeTempEnvWatch(t, "KEY=b\n")
