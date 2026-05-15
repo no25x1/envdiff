@@ -35,14 +35,9 @@ func runFlatten(args []string) error {
 		files = append(files, f)
 	}
 
-	var strat flattener.Strategy
-	switch strings.ToLower(*strategy) {
-	case "first":
-		strat = flattener.StrategyFirst
-	case "error":
-		strat = flattener.StrategyError
-	default:
-		strat = flattener.StrategyLast
+	strat, err := parseStrategy(*strategy)
+	if err != nil {
+		return fmt.Errorf("flatten: %w", err)
 	}
 
 	res, err := flattener.Apply(files, flattener.Options{Strategy: strat})
@@ -73,4 +68,20 @@ func runFlatten(args []string) error {
 	}
 
 	return exp.Write(w, res.File)
+}
+
+// parseStrategy converts a strategy name string into a flattener.Strategy value.
+// It returns an error for unrecognised strategy names instead of silently
+// falling back to a default, so callers get explicit feedback on bad input.
+func parseStrategy(s string) (flattener.Strategy, error) {
+	switch strings.ToLower(s) {
+	case "first":
+		return flattener.StrategyFirst, nil
+	case "last":
+		return flattener.StrategyLast, nil
+	case "error":
+		return flattener.StrategyError, nil
+	default:
+		return flattener.StrategyLast, fmt.Errorf("unknown strategy %q: must be first, last, or error", s)
+	}
 }
