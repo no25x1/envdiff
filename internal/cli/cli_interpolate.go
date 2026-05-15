@@ -32,9 +32,14 @@ func runInterpolate(args []string) error {
 		return fmt.Errorf("interpolate: parse %q: %w", filePath, err)
 	}
 
+	overrideMap, err := parseOverrides(*overrides)
+	if err != nil {
+		return fmt.Errorf("interpolate: invalid --override value: %w", err)
+	}
+
 	opts := interpolator.Options{
 		FailOnMissing: *failOnMissing,
-		Overrides:     parseOverrides(*overrides),
+		Overrides:     overrideMap,
 	}
 
 	result, err := interpolator.Apply(f, opts)
@@ -50,16 +55,22 @@ func runInterpolate(args []string) error {
 }
 
 // parseOverrides converts "KEY1=VAL1,KEY2=VAL2" into a map.
-func parseOverrides(raw string) map[string]string {
+// Returns an error if a pair is missing the '=' separator.
+func parseOverrides(raw string) (map[string]string, error) {
 	m := make(map[string]string)
 	if raw == "" {
-		return m
+		return m, nil
 	}
 	for _, pair := range strings.Split(raw, ",") {
-		parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
-		if len(parts) == 2 {
-			m[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
 		}
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("malformed pair %q: expected KEY=VALUE", pair)
+		}
+		m[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 	}
-	return m
+	return m, nil
 }
