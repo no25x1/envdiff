@@ -71,9 +71,27 @@ func expand(value string, lookup map[string]string, failOnMissing bool) (string,
 	return result, nil
 }
 
+// extractName strips the sigil and optional braces from a matched reference.
+// For example, "${FOO}" and "$FOO" both return "FOO".
 func extractName(match string) string {
 	match = strings.TrimPrefix(match, "$")
 	match = strings.TrimPrefix(match, "{")
 	match = strings.TrimSuffix(match, "}")
 	return match
+}
+
+// References returns the list of unique variable names referenced in value,
+// in the order they first appear. This can be used to inspect dependencies
+// between entries without performing a full expansion.
+func References(value string) []string {
+	seen := make(map[string]bool)
+	var refs []string
+	for _, match := range refPattern.FindAllString(value, -1) {
+		name := extractName(match)
+		if !seen[name] {
+			seen[name] = true
+			refs = append(refs, name)
+		}
+	}
+	return refs
 }
