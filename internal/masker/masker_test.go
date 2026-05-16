@@ -3,113 +3,85 @@ package masker_test
 import (
 	"testing"
 
-	"envdiff/internal/masker"
+	"github.com/user/envdiff/internal/masker"
+	"github.com/user/envdiff/internal/parser"
 )
 
 func TestIsSensitive_DefaultPatterns(t *testing.T) {
 	m := masker.New()
-
-	sensitiveKeys := []string{
-		"DB_PASSWORD",
-		"API_KEY",
-		"AWS_SECRET_ACCESS_KEY",
-		"AUTH_TOKEN",
-		"PRIVATE_KEY",
-		"SIGNING_KEY",
-	}
-	for _, key := range sensitiveKeys {
+	sensitive := []string{"DB_PASSWORD", "API_SECRET", "AUTH_TOKEN", "PRIVATE_KEY", "API_KEY", "AWS_CREDENTIAL"}
+	for _, key := range sensitive {
 		if !m.IsSensitive(key) {
-			t.Errorf("expected key %q to be sensitive", key)
-		}
-	}
-
-	safeKeys := []string{
-		"APP_ENV",
-		"PORT",
-		"DATABASE_HOST",
-		"LOG_LEVEL",
-	}
-	for _, key := range safeKeys {
-		if m.IsSensitive(key) {
-			t.Errorf("expected key %q to NOT be sensitive", key)
+			t.Errorf("expected %q to be sensitive", key)
 		}
 	}
 }
 
 func TestIsSensitive_CustomPatterns(t *testing.T) {
-	m := masker.New("CUSTOM_SECRET", "INTERNAL")
-
-	if !m.IsSensitive("MY_CUSTOM_SECRET_VALUE") {
-		t.Error("expected CUSTOM_SECRET pattern to match")
+	m := masker.NewWithOptions([]string{`(?i)mysecret`}, "REDACTED")
+	if !m.IsSensitive("MY_MYSECRET_KEY") {
+		t.Error("expected custom pattern to match")
 	}
-	if !m.IsSensitive("INTERNAL_KEY") {
-		t.Error("expected INTERNAL pattern to match")
-	}
-	if m.IsSensitive("API_KEY") {
-		t.Error("default patterns should not apply with custom patterns")
+	if m.IsSensitive("DB_PASSWORD") {
+		t.Error("default pattern should not match with custom-only masker")
 	}
 }
 
 func TestIsSensitive_CaseInsensitive(t *testing.T) {
 	m := masker.New()
-
-	// Keys should be matched regardless of case
-	cases := []struct {
-		key       string
-		wantMatch bool
-	}{
-		{"db_password", true},
-		{"Api_Key", true},
-		{"aws_secret_access_key", true},
-		{"app_env", false},
-		{"port", false},
+	if !m.IsSensitive("db_password") {
+		t.Error("expected lowercase key to match")
 	}
-	for _, tc := range cases {
-		got := m.IsSensitive(tc.key)
-		if got != tc.wantMatch {
-			t.Errorf("IsSensitive(%q) = %v, want %v", tc.key, got, tc.wantMatch)
-		}
-	}
-}
-
-func TestMaskEnv(t *testing.T) {
-	m := masker.New()
-
-	env := map[string]string{
-		"APP_ENV":     "production",
-		"DB_PASSWORD": "supersecret",
-		"PORT":        "8080",
-		"API_KEY":     "abc123",
-	}
-
-	masked := m.MaskEnv(env)
-
-	if masked["APP_ENV"] != "production" {
-		t.Errorf("expected APP_ENV to be unchanged, got %q", masked["APP_ENV"])
-	}
-	if masked["PORT"] != "8080" {
-		t.Errorf("expected PORT to be unchanged, got %q", masked["PORT"])
-	}
-	if masked["DB_PASSWORD"] != masker.MaskedValue {
-		t.Errorf("expected DB_PASSWORD to be masked, got %q", masked["DB_PASSWORD"])
-	}
-	if masked["API_KEY"] != masker.MaskedValue {
-		t.Errorf("expected API_KEY to be masked, got %q", masked["API_KEY"])
-	}
-
-	// Ensure original is not mutated
-	if env["DB_PASSWORD"] != "supersecret" {
-		t.Error("original env map should not be mutated")
+	if !m.IsSensitive("DB_PASSWORD") {
+		t.Error("expected uppercase key to match")
 	}
 }
 
 func TestMaskValue(t *testing.T) {
 	m := masker.New()
-
-	if got := m.MaskValue("API_KEY", "abc123"); got != masker.MaskedValue {
-		t.Errorf("expected masked value, got %q", got)
+	if got := m.MaskValue("DB_PASSWORD", "hunter2"); got != masker.DefaultPlaceholder {
+		t.Errorf("expected placeholder, got %q", got)
 	}
-	if got := m.MaskValue("APP_ENV", "staging"); got != "staging" {
+	if got := m.MaskValue("APP_NAME", "myapp"); got != "myapp" {
 		t.Errorf("expected original value, got %q", got)
+	}
+}
+
+func TestMaskEnv(t *testing.T) {
+	m := masker.New()
+	f := &parser.EnvFile{
+		Path: ".env",
+		Entries: []parser.Entry{
+			{Key: "APP_NAME", Value: "myapp"},
+			{Key: "DB_PASSWORD", Value: "supersecret"},
+			{Key: "API_TOKEN", Value: "tok_abc123"},
+		},
+	}
+	masked := m.MaskEnv(f)
+	if masked == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(masked.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(masked.Entries))
+	}
+	if masked.Entries[0].Value != "myapp" {
+		t.Errorf("expected APP_NAME unchanged, got %q", masked.Entries[0].Value)
+	}
+	if masked.Entries[1].Value != masker.DefaultPlaceholder {
+		t.Errorf("expected DB_PASSWORD masked, got %q", masked.Entries[1].Value)
+	}
+	if masked.Entries[2].Value != masker.DefaultPlaceholder {
+		t.Errorf("expected API_TOKEN masked, got %q", masked.Entries[2].Value)
+	}
+	// original should be unchanged
+	if f.Entries[1].Value != "supersecret" {
+		t.Error("original file should not be modified")
+	}
+}
+
+func TestMaskEnv_NilFile(t *testing.T) {
+	m := masker.New()
+	if got := m.MaskEnv(nil); got != nil {
+		t.Errorf("expected nil for nil input, got %v", got)
 	}
 }

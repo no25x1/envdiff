@@ -1,68 +1,80 @@
+// Package masker provides utilities for detecting and masking sensitive
+// environment variable values before display or export.
 package masker
 
 import (
+	"regexp"
 	"strings"
+
+	"github.com/user/envdiff/internal/parser"
 )
 
-// DefaultSecretPatterns holds common key substrings that indicate sensitive values.
-var DefaultSecretPatterns = []string{
-	"SECRET",
-	"PASSWORD",
-	"PASSWD",
-	"TOKEN",
-	"API_KEY",
-	"APIKEY",
-	"PRIVATE",
-	"CREDENTIALS",
-	"AUTH",
-	"ACCESS_KEY",
-	"SIGNING_KEY",
+// DefaultPlaceholder is used when a sensitive value is masked.
+const DefaultPlaceholder = "***"
+
+// DefaultPatterns are regex patterns matched against keys to detect secrets.
+var DefaultPatterns = []string{
+	`(?i)password`,
+	`(?i)secret`,
+	`(?i)token`,
+	`(?i)api[_-]?key`,
+	`(?i)private[_-]?key`,
+	`(?i)auth`,
+	`(?i)credential`,
 }
 
-const MaskedValue = "***MASKED***"
-
-// Masker masks sensitive values in env maps based on key patterns.
+// Masker masks sensitive values in env files.
 type Masker struct {
-	patterns []string
+	patterns    []*regexp.Regexp
+	placeholder string
 }
 
-// New creates a Masker with the provided secret key patterns.
-// If no patterns are provided, DefaultSecretPatterns are used.
-func New(patterns ...string) *Masker {
-	if len(patterns) == 0 {
-		patterns = DefaultSecretPatterns
+// New creates a Masker with default patterns and placeholder.
+func New() *Masker {
+	return NewWithOptions(DefaultPatterns, DefaultPlaceholder)
+}
+
+// NewWithOptions creates a Masker with custom patterns and placeholder.
+func NewWithOptions(patterns []string, placeholder string) *Masker {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		if re, err := regexp.Compile(p); err == nil {
+			compiled = append(compiled, re)
+		}
 	}
-	return &Masker{patterns: patterns}
+	return &Masker{patterns: compiled, placeholder: placeholder}
 }
 
-// IsSensitive returns true if the key matches any known secret pattern.
+// IsSensitive returns true if the key matches any sensitive pattern.
 func (m *Masker) IsSensitive(key string) bool {
-	upper := strings.ToUpper(key)
-	for _, p := range m.patterns {
-		if strings.Contains(upper, strings.ToUpper(p)) {
+	for _, re := range m.patterns {
+		if re.MatchString(key) {
 			return true
 		}
 	}
 	return false
 }
 
-// MaskEnv returns a copy of the env map with sensitive values replaced.
-func (m *Masker) MaskEnv(env map[string]string) map[string]string {
-	masked := make(map[string]string, len(env))
-	for k, v := range env {
-		if m.IsSensitive(k) {
-			masked[k] = MaskedValue
-		} else {
-			masked[k] = v
-		}
-	}
-	return masked
-}
-
-// MaskValue returns the masked constant if the key is sensitive, otherwise the original value.
+// MaskValue returns the placeholder if the key is sensitive, otherwise the value.
 func (m *Masker) MaskValue(key, value string) string {
 	if m.IsSensitive(key) {
-		return MaskedValue
+		return m.placeholder
 	}
 	return value
+}
+
+// MaskEnv returns a copy of the env file with sensitive values replaced.
+func (m *Masker) MaskEnv(f *parser.EnvFile) *parser.EnvFile {
+	if f == nil {
+		return nil
+	}
+	out := &parser.EnvFile{Path: f.Path}
+	for _, e := range f.Entries {
+		masked := e
+		if m.IsSensitive(strings.TrimSpace(e.Key)) {
+			masked.Value = m.placeholder
+		}
+		out.Entries = append(out.Entries, masked)
+	}
+	return out
 }
