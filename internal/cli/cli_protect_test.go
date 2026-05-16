@@ -36,6 +36,14 @@ func TestRun_ProtectMissingBaseFile(t *testing.T) {
 	}
 }
 
+func TestRun_ProtectMissingNextFile(t *testing.T) {
+	base := writeTempEnvProtect(t, "SECRET=old\n")
+	err := cli.Run([]string{"protect", base, filepath.Join(t.TempDir(), "missing.env")})
+	if err == nil {
+		t.Fatal("expected error for missing next file")
+	}
+}
+
 func TestRun_ProtectNoViolations(t *testing.T) {
 	base := writeTempEnvProtect(t, "SECRET=same\n")
 	next := writeTempEnvProtect(t, "SECRET=same\n")
