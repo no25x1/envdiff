@@ -19,6 +19,16 @@ func entry(key, value, comment string) parser.Entry {
 	return parser.Entry{Key: key, Value: value, Comment: comment}
 }
 
+// findEntry returns the entry with the given key, or an empty Entry if not found.
+func findEntry(entries []parser.Entry, key string) (parser.Entry, bool) {
+	for _, e := range entries {
+		if e.Key == key {
+			return e, true
+		}
+	}
+	return parser.Entry{}, false
+}
+
 func TestApply_NilFile_ReturnsEmpty(t *testing.T) {
 	out, err := commenter.Apply(nil, commenter.Options{})
 	if err != nil {
@@ -37,13 +47,19 @@ func TestApply_SetComment_NoExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, e := range out.Entries {
-		if e.Key == "API_KEY" && e.Comment != "# sensitive value" {
+	if e, ok := findEntry(out.Entries, "API_KEY"); ok {
+		if e.Comment != "# sensitive value" {
 			t.Errorf("expected '# sensitive value', got %q", e.Comment)
 		}
-		if e.Key == "DB_HOST" && e.Comment != "" {
+	} else {
+		t.Error("API_KEY entry not found")
+	}
+	if e, ok := findEntry(out.Entries, "DB_HOST"); ok {
+		if e.Comment != "" {
 			t.Errorf("expected empty comment for DB_HOST, got %q", e.Comment)
 		}
+	} else {
+		t.Error("DB_HOST entry not found")
 	}
 }
 
@@ -96,12 +112,18 @@ func TestApply_RemoveComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, e := range out.Entries {
-		if e.Key == "DB_PASS" && e.Comment != "" {
+	if e, ok := findEntry(out.Entries, "DB_PASS"); ok {
+		if e.Comment != "" {
 			t.Errorf("expected empty comment for DB_PASS, got %q", e.Comment)
 		}
-		if e.Key == "DB_HOST" && e.Comment != "# keep this" {
+	} else {
+		t.Error("DB_PASS entry not found")
+	}
+	if e, ok := findEntry(out.Entries, "DB_HOST"); ok {
+		if e.Comment != "# keep this" {
 			t.Errorf("expected '# keep this' for DB_HOST, got %q", e.Comment)
 		}
+	} else {
+		t.Error("DB_HOST entry not found")
 	}
 }
