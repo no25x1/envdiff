@@ -62,6 +62,37 @@ func Apply(f *parser.EnvFile, opts Options) (*parser.EnvFile, error) {
 	return out, nil
 }
 
+// Count returns the number of entries that would be removed by Apply without
+// actually modifying anything. It returns an error under the same conditions
+// as Apply.
+func Count(f *parser.EnvFile, opts Options) (int, error) {
+	if f == nil {
+		return 0, nil
+	}
+
+	if !opts.RemoveEmpty && !opts.RemoveCommented {
+		return 0, errors.New("pruner: no pruning options enabled")
+	}
+
+	allow := toSet(opts.Allowlist)
+	removed := 0
+
+	for _, e := range f.Entries {
+		if allow[e.Key] {
+			continue
+		}
+		if opts.RemoveCommented && e.Key == "" {
+			removed++
+			continue
+		}
+		if opts.RemoveEmpty && e.Key != "" && e.Value == "" {
+			removed++
+		}
+	}
+
+	return removed, nil
+}
+
 func toSet(keys []string) map[string]bool {
 	s := make(map[string]bool, len(keys))
 	for _, k := range keys {
