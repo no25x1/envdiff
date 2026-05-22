@@ -61,6 +61,15 @@ func Parse(path string) (*EnvFile, error) {
 	return env, nil
 }
 
+// Keys returns a slice of all keys in the order they appear in the file.
+func (e *EnvFile) Keys() []string {
+	keys := make([]string, len(e.Entries))
+	for i, entry := range e.Entries {
+		keys[i] = entry.Key
+	}
+	return keys
+}
+
 func parseLine(line string, lineNum int) (Entry, error) {
 	comment := ""
 	if idx := strings.Index(line, " #"); idx != -1 {
