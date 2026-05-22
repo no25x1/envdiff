@@ -1,3 +1,4 @@
+// Package masker provides secret masking for .env file values.
 package masker
 
 import (
@@ -7,8 +8,9 @@ import (
 	"github.com/user/envdiff/internal/parser"
 )
 
-const defaultPlaceholder = "***"
+const DefaultPlaceholder = "***"
 
+// defaultSensitivePatterns are case-insensitive key patterns that indicate secrets.
 var defaultSensitivePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)password`),
 	regexp.MustCompile(`(?i)secret`),
@@ -19,34 +21,39 @@ var defaultSensitivePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)credential`),
 }
 
+// Options configures masking behaviour.
+type Options struct {
+	Patterns    []*regexp.Regexp
+	Placeholder string
+}
+
 // Masker masks sensitive values in env files.
 type Masker struct {
-	patterns    []*regexp.Regexp
-	placeholder string
+	opts Options
 }
 
 // New returns a Masker with default sensitive patterns.
 func New() *Masker {
-	return &Masker{
-		patterns:    defaultSensitivePatterns,
-		placeholder: defaultPlaceholder,
-	}
+	return NewWithOptions(Options{
+		Patterns:    defaultSensitivePatterns,
+		Placeholder: DefaultPlaceholder,
+	})
 }
 
-// NewWithOptions returns a Masker with custom patterns and placeholder.
-func NewWithOptions(patterns []*regexp.Regexp, placeholder string) *Masker {
-	if len(patterns) == 0 {
-		patterns = defaultSensitivePatterns
+// NewWithOptions returns a Masker configured with the supplied options.
+func NewWithOptions(opts Options) *Masker {
+	if opts.Placeholder == "" {
+		opts.Placeholder = DefaultPlaceholder
 	}
-	if placeholder == "" {
-		placeholder = defaultPlaceholder
+	if len(opts.Patterns) == 0 {
+		opts.Patterns = defaultSensitivePatterns
 	}
-	return &Masker{patterns: patterns, placeholder: placeholder}
+	return &Masker{opts: opts}
 }
 
-// IsSensitive reports whether the given key matches any sensitive pattern.
+// IsSensitive reports whether key matches any sensitive pattern.
 func (m *Masker) IsSensitive(key string) bool {
-	for _, p := range m.patterns {
+	for _, p := range m.opts.Patterns {
 		if p.MatchString(strings.ToLower(key)) {
 			return true
 		}
@@ -54,18 +61,18 @@ func (m *Masker) IsSensitive(key string) bool {
 	return false
 }
 
-// MaskValue returns the placeholder if the key is sensitive, otherwise the original value.
+// MaskValue returns the placeholder if key is sensitive, otherwise value.
 func (m *Masker) MaskValue(key, value string) string {
 	if m.IsSensitive(key) {
-		return m.placeholder
+		return m.opts.Placeholder
 	}
 	return value
 }
 
-// MaskEnv returns a copy of the env file with sensitive values replaced.
+// MaskEnv returns a copy of f with sensitive values replaced by the placeholder.
 func (m *Masker) MaskEnv(f *parser.EnvFile) *parser.EnvFile {
 	if f == nil {
-		return &parser.EnvFile{}
+		return nil
 	}
 	out := &parser.EnvFile{Path: f.Path}
 	for _, e := range f.Entries {

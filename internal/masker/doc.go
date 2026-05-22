@@ -1,15 +1,14 @@
 // Package masker provides utilities for detecting and masking sensitive
 // values in .env files.
 //
-// A Masker is configured with a set of key-name patterns (regular expressions)
-// that identify sensitive fields such as passwords, tokens, and API keys.
-// When a key matches a pattern its value is replaced with a configurable
-// placeholder string (default: "***").
+// Keys matching patterns such as PASSWORD, SECRET, TOKEN, API_KEY, AUTH, and
+// PRIVATE_KEY are considered sensitive. Their values are replaced with a
+// configurable placeholder (default "***") when masking is applied.
 //
 // Usage:
 //
 //	m := masker.New()
 //	masked := m.MaskEnv(envFile)
 //
-// Custom patterns and placeholders can be provided via NewWithOptions.
+// Custom patterns and placeholders can be supplied via NewWithOptions.
 package masker
