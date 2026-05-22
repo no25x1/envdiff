@@ -36,6 +36,23 @@ func Apply(src *parser.EnvFile, opts Options) *parser.EnvFile {
 	return out
 }
 
+// Count returns the number of entries that would be stripped from src given opts.
+// This is useful for dry-run reporting without allocating a new EnvFile.
+func Count(src *parser.EnvFile, opts Options) int {
+	keySet := make(map[string]struct{}, len(opts.Keys))
+	for _, k := range opts.Keys {
+		keySet[k] = struct{}{}
+	}
+
+	n := 0
+	for _, e := range src.Entries {
+		if shouldStrip(e, keySet, opts) {
+			n++
+		}
+	}
+	return n
+}
+
 func shouldStrip(e parser.Entry, keySet map[string]struct{}, opts Options) bool {
 	if _, ok := keySet[e.Key]; ok {
 		return true
