@@ -93,3 +93,14 @@ func TestApply_PreservesPath(t *testing.T) {
 		t.Errorf("expected path prod.env, got %s", out.Path)
 	}
 }
+
+func TestApply_EmptyFile_ReturnsEmpty(t *testing.T) {
+	file := makeFile()
+	out, err := filter.Apply(file, filter.Options{Prefix: "DB_"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Entries) != 0 {
+		t.Errorf("expected 0 entries for empty file, got %d", len(out.Entries))
+	}
+}
